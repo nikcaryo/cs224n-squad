@@ -100,7 +100,7 @@ class CharBiDAF(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, hidden_size, char_vectors, char_hidden_size, drop_prob=0. , ):
+    def __init__(self, word_vectors, hidden_size, char_vectors, char_hidden_size, drop_prob=0. , output='bidaf', attention_size=100):
         super(CharBiDAF, self).__init__()
 
         print('enc input size', word_vectors.size(1) + hidden_size)
@@ -123,8 +123,18 @@ class CharBiDAF(nn.Module):
                                      num_layers=2,
                                      drop_prob=drop_prob)
 
-        self.out = layers.BiDAFOutput(hidden_size=hidden_size,
-                                      drop_prob=drop_prob)
+        if output == 'bidaf':
+            self.out = layers.BiDAFOutput(hidden_size=hidden_size,
+                                        drop_prob=drop_prob)
+        elif output == 'rnet':
+            self.out = layers.OutputRNET(hidden_size=hidden_size,
+                                        drop_prob=drop_prob,
+                                        attention_size=attention_size,
+                                        
+
+                )
+
+
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
