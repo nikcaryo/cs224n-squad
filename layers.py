@@ -284,7 +284,7 @@ class OutputRNET(nn.Module):
         drop_prob (float): Probability of zero-ing out activations.
     """
     def __init__(self, hidden_size, drop_prob):
-        super(BiDAFOutput, self).__init__()
+        super(OutputRNET, self).__init__()
         self.att_linear_1 = nn.Linear(8 * hidden_size, 1)
         self.mod_linear_1 = nn.Linear(2 * hidden_size, 1)
 
