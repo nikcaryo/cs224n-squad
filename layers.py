@@ -4,13 +4,13 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
+from unicodedata import bidirectional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
-
 
 class Embedding(nn.Module):
     """Embedding layer used by BiDAF, without the character-level component.
@@ -35,8 +35,47 @@ class Embedding(nn.Module):
         emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
-
         return emb
+
+class EmbeddingRNET(nn.Module):
+    """Embedding layer used by BiDAF, without the character-level component.
+
+    Word-level embeddings are further refined using a 2-layer Highway Encoder
+    (see `HighwayEncoder` class for details).
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        hidden_size (int): Size of hidden activation for char-level embedding of word.
+        drop_prob (float): Probability of zero-ing out activations
+        num_layers (int): Number of layers for char-level RNN encoder.
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, num_layers):
+        super(Embedding, self).__init__()
+        self.drop_prob = drop_prob
+        self.embed_word = nn.Embedding.from_pretrained(word_vectors)
+        self.embed_char = nn.Embedding.from_pretrained(char_vectors)
+
+        self.char_encoder = nn.GRU(
+            input_size = char_vectors.size(1),
+            hidden_size = hidden_size,
+            num_layers = num_layers,
+            dropout = drop_prob,
+            bidirectional = True,
+            batch_first = True,
+        )
+
+    def forward(self, w_idxs, c_idxs):
+        emb_word = self.embed_word(w_idxs)   # (batch_size, seq_len, embed_size)
+        emb_chars = self.embed_char(c_idxs)  # (batch_size, seq_char_len, embed_size)
+
+        emb = torch.cat((emb_word, emb_chars), 2) # (batch_size, seq_len + seq_char_len, embed_size)
+        # emb = F.dropout(emb, self.drop_prob, self.training)
+        # emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        # emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+
+        print(emb.size())
+        return emb
+
 
 
 class HighwayEncoder(nn.Module):
