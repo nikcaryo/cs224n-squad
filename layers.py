@@ -49,18 +49,18 @@ class EmbeddingRNET(nn.Module):
         drop_prob (float): Probability of zero-ing out activations
         num_layers (int): Number of layers for char-level RNN encoder.
     """
-    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, hidden_size =1):
+    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, char_hidden_size):
         super(EmbeddingRNET, self).__init__()
         self.drop_prob = drop_prob
         self.embed_word = nn.Embedding.from_pretrained(word_vectors)
         self.embed_char = nn.Embedding.from_pretrained(char_vectors)
         self.char_vectors = char_vectors
         self.num_layers = num_layers
-        self.hidden_size = hidden_size
+        self.char_hidden_size = char_hidden_size
 
         self.char_encoder = nn.GRU(
             input_size = char_vectors.size(1),
-            hidden_size = self.hidden_size,
+            hidden_size = self.char_hidden_size,
             num_layers = self.num_layers,
             dropout = drop_prob,
             bidirectional = True,
@@ -77,18 +77,18 @@ class EmbeddingRNET(nn.Module):
         emb_chars = emb_chars.view(batch_size * seq_len, max_len, char_embed_size)
 
         # for each word, feed each char into the rnn
-        output, hn = self.char_encoder(emb_chars)
+        _, hn = self.char_encoder(emb_chars)
 
         # reshape so that we match the first two dims of emb_words
         # meaning, for each batch, for each seq, each learned char-word embedding
         # where the char-word embedding is the last hidden state of the last rnn layer
-        hn_last_forward = hn[self.num_layers - 1, :, :] # (batch_size, hidden_size)
-        hn_last_forward = hn_last_forward.view(batch_size, seq_len, self.hidden_size)
+        hn_last_forward = hn[self.num_layers - 1, :, :] # (batch_size, char_hidden_size)
+        hn_last_forward = hn_last_forward.view(batch_size, seq_len, self.char_hidden_size)
 
-        hn_last_backward = hn[self.num_layers, :, :] # (batch_size, hidden_size)
-        hn_last_backward = hn_last_backward.view(batch_size, seq_len, self.hidden_size)
+        hn_last_backward = hn[self.num_layers, :, :] # (batch_size, char_hidden_size)
+        hn_last_backward = hn_last_backward.view(batch_size, seq_len, self.char_hidden_size)
         
-        # concat to get (batch_size, seq_len, word_embed_size + 2 * hidden_size)
+        # concat to get (batch_size, seq_len, word_embed_size + 2 * char_hidden_size)
         emb = torch.cat((emb_word, hn_last_forward, hn_last_backward), 2)
         return emb
 
