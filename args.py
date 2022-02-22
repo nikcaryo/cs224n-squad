@@ -209,6 +209,12 @@ def add_train_test_args(parser):
                         type=str,
                         required=True,
                         help='Name to identify training or test run.')
+    parser.add_argument('--model',
+                        '-m',
+                        type=str,
+                        required=True,
+                        help='Which model to use.')
+
     parser.add_argument('--max_ans_len',
                         type=int,
                         default=15,
