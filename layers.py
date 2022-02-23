@@ -5,6 +5,8 @@ Author:
 """
 
 from unicodedata import bidirectional
+
+from numpy import s_
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -299,27 +301,46 @@ class OutputRNET(nn.Module):
     def forward(self, q_enc, x):
 
         # initial state: rQ = h_init
-        s = F.tanh(self.W_u_Q(q_enc))
+        # x = x.permute(1, 0, 2)
+        # q_enc = q_enc.permute(1, 0, 2)
+
+        s = torch.tanh(self.W_u_Q(q_enc))
         s = self.v_T_r(s)
-        a = F.softmax(s)
-        h_init = torch.sum(a * q_enc)
+        # print('s size', s.size())
+        a = F.softmax(s, dim=1)
+        # print('a size', a.size())
+        # print('q_enc', q_enc.size())
+        h_init = torch.sum(a * q_enc, dim=1)
+        h_init = h_init.unsqueeze(1)
+        # print('h init size', h_init.size())
 
-        s_start = F.tanh(self.W_h_P(x) + self.W_h_a(h_init))
+        # print('x', x.size())
+        s_1 = self.W_h_P(x)
+        s_2 = self.W_h_a(h_init)
+
+        # print('s_1', s_1.size())
+        # print('s_2', s_2.size())
+
+        s_start = torch.tanh(s_1+ s_2)
+        # print('s_start', s_start.size())
         s_start = self.v_T(s_start)
-        log_p_start = F.log_softmax(s_start)
-        p_start = F.softmax(s_start)
+        log_p_start = F.log_softmax(s_start, dim=1)
+        p_start = F.softmax(s_start, dim=1)
 
-        cell_input = torch.sum(p_start * x)
+        cell_input = torch.sum(p_start * x, dim=1)
+
+        # print('cell input', cell_input.size())
+        h_init = h_init.squeeze(1)
         h_last = self.gru(cell_input, h_init)
+        h_last = h_last.unsqueeze(1)
 
-        s_end = F.tanh(self.W_h_P(x) + self.W_h_a(h_last))
+        s_end = torch.tanh(self.W_h_P(x) + self.W_h_a(h_last))
         s_end = self.v_T(s_end)
-        log_p_end = F.log_softmax(s_end)
-        p_end = F.softmax(s_end)
+        log_p_end = F.log_softmax(s_end, dim=1)
 
-        print(r.size())
+        # print('log p end', log_p_end.size())
 
 
 
         # (batch_size, c_len) * 2
-        return log_p_start, log_p2
+        return log_p_start.squeeze(-1), log_p_end.squeeze(-1)
