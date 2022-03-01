@@ -140,8 +140,8 @@ class CharBiDAF(nn.Module):
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        c_emb = self.emb(cw_idxs, cc_idxs)   # (batch_size, c_len, emb_size)
-        q_emb = self.emb(qw_idxs, qc_idxs)   # (batch_size, q_len, emb_size)
+        c_emb = self.emb(cw_idxs, cc_idxs)   # (batch_size, c_len, hidden_size)
+        q_emb = self.emb(qw_idxs, qc_idxs)   # (batch_size, q_len, hidden_size)
 
         # Encode both the context and question with RNN 
         c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)

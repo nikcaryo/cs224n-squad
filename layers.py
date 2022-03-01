@@ -62,7 +62,7 @@ class EmbeddingRNET(nn.Module):
 
         emb_size = word_vectors.size(1) + 2 * char_hidden_size
 
-        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+        self.proj = nn.Linear(emb_size, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
 
         self.char_encoder = nn.GRU(
@@ -100,6 +100,7 @@ class EmbeddingRNET(nn.Module):
         
         # concat to get (batch_size, seq_len, word_embed_size + 2 * char_hidden_size)
         emb = torch.cat((emb_word, hn_last_forward, hn_last_backward), 2)
+
         return emb
 
 
