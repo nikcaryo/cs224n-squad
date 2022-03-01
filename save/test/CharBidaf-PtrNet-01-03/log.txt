@@ -1,0 +1,30 @@
+[02.24.22 06:20:55] Args: {
+    "batch_size": 64,
+    "char_emb_file": "./data/char_emb.json",
+    "char_hidden_size": 100,
+    "dev_eval_file": "./data/dev_eval.json",
+    "dev_record_file": "./data/dev.npz",
+    "hidden_size": 100,
+    "load_path": "save/train/charbidaf-rnet-output-01/best.pth.tar",
+    "max_ans_len": 15,
+    "model": "charbidaf",
+    "name": "CharBidaf-PtrNet-01",
+    "num_visuals": 10,
+    "num_workers": 4,
+    "save_dir": "./save/test/CharBidaf-PtrNet-01-03",
+    "split": "dev",
+    "sub_file": "submission.csv",
+    "test_eval_file": "./data/test_eval.json",
+    "test_record_file": "./data/test.npz",
+    "train_eval_file": "./data/train_eval.json",
+    "train_record_file": "./data/train.npz",
+    "use_squad_v2": true,
+    "word_emb_file": "./data/word_emb.json"
+}
+[02.24.22 06:20:57] Loading embeddings...
+[02.24.22 06:21:02] Building model...
+[02.24.22 06:21:29] Loading checkpoint from save/train/charbidaf-rnet-output-01/best.pth.tar...
+[02.24.22 06:21:29] Building dataset...
+[02.24.22 06:21:31] Evaluating on dev split...
+[02.24.22 06:21:52] Dev NLL: 02.77, F1: 61.40, EM: 58.73, AvNA: 66.91
+[02.24.22 06:21:53] Writing submission file to ./save/test/CharBidaf-PtrNet-01-03/dev_submission.csv...
