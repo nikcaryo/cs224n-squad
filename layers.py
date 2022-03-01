@@ -51,7 +51,7 @@ class EmbeddingRNET(nn.Module):
         drop_prob (float): Probability of zero-ing out activations
         num_layers (int): Number of layers for char-level RNN encoder.
     """
-    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, char_hidden_size):
+    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, char_hidden_size, hidden_size):
         super(EmbeddingRNET, self).__init__()
         self.drop_prob = drop_prob
         self.embed_word = nn.Embedding.from_pretrained(word_vectors)
@@ -60,11 +60,16 @@ class EmbeddingRNET(nn.Module):
         self.num_layers = num_layers
         self.char_hidden_size = char_hidden_size
 
+        emb_size = word_vectors.size(1) + 2 * char_hidden_size
+
+        self.proj = nn.Linear(emb_size, hidden_size, bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size)
+
         self.char_encoder = nn.GRU(
             input_size = char_vectors.size(1),
             hidden_size = self.char_hidden_size,
             num_layers = self.num_layers,
-            dropout = drop_prob,
+            dropout = self.drop_prob,
             bidirectional = True,
             batch_first = True,
         )
@@ -92,6 +97,9 @@ class EmbeddingRNET(nn.Module):
         
         # concat to get (batch_size, seq_len, word_embed_size + 2 * char_hidden_size)
         emb = torch.cat((emb_word, hn_last_forward, hn_last_backward), 2)
+        emb = F.dropout(emb, self.drop_prob, self.training)
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        # emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
         return emb
 
 
