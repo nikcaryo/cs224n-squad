@@ -62,7 +62,7 @@ class EmbeddingRNET(nn.Module):
 
         emb_size = word_vectors.size(1) + 2 * char_hidden_size
 
-        self.proj = nn.Linear(emb_size, hidden_size, bias=False)
+        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
 
         self.char_encoder = nn.GRU(
@@ -78,6 +78,9 @@ class EmbeddingRNET(nn.Module):
 
         emb_word = self.embed_word(w_idxs)   # (batch_size, seq_len, embed_size)
         emb_chars = self.embed_char(c_idxs)  # (batch_size, seq_char_len, max_chars, char_embed_size)
+
+        emb_word = F.dropout(emb_word, self.drop_prob)
+        emb_chars = F.dropout(emb_chars, self.drop_prob)
 
         # reshape so that a 'batch' is a single word, 
         batch_size, seq_len, max_len, char_embed_size = emb_chars.size()
@@ -97,9 +100,6 @@ class EmbeddingRNET(nn.Module):
         
         # concat to get (batch_size, seq_len, word_embed_size + 2 * char_hidden_size)
         emb = torch.cat((emb_word, hn_last_forward, hn_last_backward), 2)
-        emb = F.dropout(emb, self.drop_prob, self.training)
-        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
-        # emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
         return emb
 
 
