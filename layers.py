@@ -287,6 +287,53 @@ class BiDAFOutput(nn.Module):
 
         return log_p1, log_p2
 
+class GatedAttention(nn.Module):
+    def __init__(self, input_size, output_size, drop_prob):
+        self.GRU = nn.GRU(input_size, output_size)
+        self.W = nn.Linear(input_size, input_size)
+        self.drop_prob = drop_prob
+        self.input_size = input_size
+        self.output_size = output_size
+        
+    def forward(self, passage, question, mask=None):
+        outputs = torch.bmm(passage, passage.permute(0, 2, 1))
+        if mask is not None:
+            outputs.masked_fill(mask, float('-inf'))
+        att_soft = F.softmax(outputs, dim=2)
+        att = torch.bmm(att_soft, passage)
+        g = torch.cat((passage, att), 2)
+        Wg = self.W(g)
+        Wg_drop = F.Dropout(Wg, p=self.drop_prob)
+        result = F.sigmoid(Wg_drop) * g
+        _, c = torch.split(result, (self.input_size, self.input_size), 2)
+        gru_output = self.GRU(c)[0]
+        return gru_output
+
+class GatedAttention2(nn.Module):
+    def __init__(self, input_size, output_size, drop_prob):
+        self.GRU = nn.GRU(input_size, output_size)
+        self.W = nn.Linear(input_size, input_size)
+        self.drop_prob = drop_prob
+        self.input_size = input_size
+        self.output_size = output_size
+        
+    def forward(self, passage, question, mask=None):
+        outputs = torch.bmm(passage, passage.permute(0, 2, 1))
+        if mask is not None:
+            outputs.masked_fill(mask, float('-inf'))
+        att_soft = F.softmax(outputs, dim=2)
+        att = torch.bmm(att_soft, passage)
+        g = torch.cat((passage, att), 2)
+        Wg = self.W(g)
+        Wg_drop = F.Dropout(Wg, p=self.drop_prob)
+        result = F.sigmoid(Wg_drop) * g
+        _, c = torch.split(result, (self.input_size, self.input_size), 2)
+        gru_output = self.GRU(c)[0]
+        return gru_output
+
+
+
+
 class OutputRNET(nn.Module):
     """Output layer used by RNET for Question Answering
 
