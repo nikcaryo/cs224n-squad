@@ -14,7 +14,9 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
 
-from util import masked_softmax
+from util import masked_softmax, get_available_devices
+
+device, _ = get_available_devices()
 
 class Embedding(nn.Module):
     """Embedding layer used by BiDAF, without the character-level component.
@@ -314,6 +316,7 @@ class GatedAttention(nn.Module):
 
         v = None
         vtp = Variable(torch.zeros(1, batch_size, hidden_size))
+        vtp.to(device)
 
 
         for i in range(passage_len):
@@ -382,6 +385,7 @@ class SelfMatching(nn.Module):
 
         v = None
         last_hidden = Variable(torch.zeros(2, batch_size, hidden_size))
+        last_hidden.to(device)
 
         for i in range(passage_len):
             p_word = passage[:,i,:]
