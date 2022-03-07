@@ -316,7 +316,7 @@ class GatedAttention(nn.Module):
 
         v = None
         vtp = Variable(torch.zeros(1, batch_size, hidden_size))
-        vtp.to(device)
+        vtp = vtp.to(device)
 
 
         for i in range(passage_len):
@@ -385,7 +385,7 @@ class SelfMatching(nn.Module):
 
         v = None
         last_hidden = Variable(torch.zeros(2, batch_size, hidden_size))
-        last_hidden.to(device)
+        last_hidden = last_hidden.to(device)
 
         for i in range(passage_len):
             p_word = passage[:,i,:]
