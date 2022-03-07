@@ -123,6 +123,8 @@ class CharBiDAF(nn.Module):
                                      hidden_size=hidden_size,
                                      num_layers=2,
                                      drop_prob=drop_prob)
+
+        self.gated_attn = layers.GatedAttention(hidden_size=hidden_size, output_size=hidden_size, attention_size=hidden_size, drop_prob=drop_prob)
         self.output = output
         if output == 'bidaf':
             self.out = layers.BiDAFOutput(hidden_size=hidden_size,
@@ -148,6 +150,9 @@ class CharBiDAF(nn.Module):
         q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
 
 
+
+        gated_att = self.gated_attn(c_enc, q_enc)
+        assert(False)
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 

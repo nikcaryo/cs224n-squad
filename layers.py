@@ -288,48 +288,76 @@ class BiDAFOutput(nn.Module):
         return log_p1, log_p2
 
 class GatedAttention(nn.Module):
-    def __init__(self, input_size, output_size, drop_prob):
-        self.GRU = nn.GRU(input_size, output_size)
-        self.W = nn.Linear(input_size, input_size)
-        self.drop_prob = drop_prob
-        self.input_size = input_size
-        self.output_size = output_size
-        
-    def forward(self, passage, question, mask=None):
-        outputs = torch.bmm(passage, passage.permute(0, 2, 1))
-        if mask is not None:
-            outputs.masked_fill(mask, float('-inf'))
-        att_soft = F.softmax(outputs, dim=2)
-        att = torch.bmm(att_soft, passage)
-        g = torch.cat((passage, att), 2)
-        Wg = self.W(g)
-        Wg_drop = F.Dropout(Wg, p=self.drop_prob)
-        result = F.sigmoid(Wg_drop) * g
-        _, c = torch.split(result, (self.input_size, self.input_size), 2)
-        gru_output = self.GRU(c)[0]
-        return gru_output
+    def __init__(self, hidden_size, output_size, attention_size, drop_prob):
+        super(GatedAttention, self).__init__()
+        self.GRU = nn.GRU(hidden_size * 4, hidden_size * 2, batch_first = True, dropout=drop_prob)
 
-class GatedAttention2(nn.Module):
-    def __init__(self, input_size, output_size, drop_prob):
-        self.GRU = nn.GRU(input_size, output_size)
-        self.W = nn.Linear(input_size, input_size)
+        self.Wuq = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+        self.Wup = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+        self.Wvp = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+
+        self.Wg = nn.Linear(hidden_size * 4, hidden_size * 4, bias=False)
+        
+
+        self.v = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+
         self.drop_prob = drop_prob
-        self.input_size = input_size
         self.output_size = output_size
         
     def forward(self, passage, question, mask=None):
-        outputs = torch.bmm(passage, passage.permute(0, 2, 1))
-        if mask is not None:
-            outputs.masked_fill(mask, float('-inf'))
-        att_soft = F.softmax(outputs, dim=2)
-        att = torch.bmm(att_soft, passage)
-        g = torch.cat((passage, att), 2)
-        Wg = self.W(g)
-        Wg_drop = F.Dropout(Wg, p=self.drop_prob)
-        result = F.sigmoid(Wg_drop) * g
-        _, c = torch.split(result, (self.input_size, self.input_size), 2)
-        gru_output = self.GRU(c)[0]
-        return gru_output
+        batch_size, passage_len, hidden_size = passage.size()
+        print('passage size: ', passage.size())
+        _, question_len, _ = question.size()
+        print('question size: ', question.size())
+
+        v = None
+        vtp = torch.zeros(1, batch_size, hidden_size)
+
+
+        for i in range(passage_len):
+            p_word = passage[:,i,:]
+            print('p_word size: ', p_word.size())
+
+            a = self.Wuq(question)
+            print('wuq size: ', a.size())
+            b = self.Wup(p_word)
+            print('wup size: ', b.size())
+            c = self.Wvp(vtp)
+            print('wvp size: ', c.size())
+            temp = a.permute(1,0,2) + b
+            print('temp size', temp.size())
+            s = self.v(torch.tanh(temp + c))
+            print('s size: ', s.size())
+            s = s.permute(1, 0, 2)
+            a_t = F.softmax(s)
+            print('a_t size:',  a_t.size())
+            c_t = torch.sum(a_t * question, dim=1)
+            print('c_t size: ', c_t.size())
+
+            # gate
+            passage_attn = torch.cat([p_word, c_t], dim = 1)
+            print('passage_attn size: ', passage_attn.size())
+            gt = F.sigmoid(self.Wg(passage_attn))
+            print('gt size: ', gt.size())
+            rnn_input = gt * passage_attn
+
+            # unsqueeze?
+            rnn_input = rnn_input.unsqueeze(1)
+            print('rnn_input size: ', rnn_input.size())
+
+
+            output, vtp = self.GRU(rnn_input, vtp)
+            print('vtp size part 2: ', vtp.size())
+
+            if v is None:
+                v = vtp
+            else:
+                v = torch.cat((v, vtp), dim=0)
+        v = v.permute(1, 0, 2)
+        print('final v size:', v.size())
+
+        return v
+
 
 
 
@@ -395,6 +423,7 @@ class OutputRNET(nn.Module):
         log_p_end = F.log_softmax(s_end, dim=1)
 
         # print('log p end', log_p_end.size())
+
 
 
 
