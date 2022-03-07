@@ -331,7 +331,7 @@ class GatedAttention(nn.Module):
             s = self.v(torch.tanh(temp + c))
             # print('s size: ', s.size())
             s = s.permute(1, 0, 2)
-            a_t = F.softmax(s)
+            a_t = F.softmax(s, dim=0)
             # print('a_t size:',  a_t.size())
             c_t = torch.sum(a_t * question, dim=1)
             # print('c_t size: ', c_t.size())
@@ -339,7 +339,7 @@ class GatedAttention(nn.Module):
             # gate
             passage_attn = torch.cat([p_word, c_t], dim = 1)
             # print('passage_attn size: ', passage_attn.size())
-            gt = F.sigmoid(self.Wg(passage_attn))
+            gt = torch.sigmoid(self.Wg(passage_attn))
             # print('gt size: ', gt.size())
             rnn_input = gt * passage_attn
 
@@ -399,7 +399,7 @@ class SelfMatching(nn.Module):
             s = self.v(torch.tanh(temp))
             # print('s size: ', s.size())
             s = s.permute(1, 0, 2)
-            a_t = F.softmax(s)
+            a_t = F.softmax(s, dim=0)
             # print('a_t size:',  a_t.size())
             c_t = torch.sum(a_t * passage, dim=1)
             # print('c_t size: ', c_t.size())
@@ -407,7 +407,7 @@ class SelfMatching(nn.Module):
             # gate
             passage_attn = torch.cat([p_word, c_t], dim = 1)
             # print('passage_attn size: ', passage_attn.size())
-            gt = F.sigmoid(self.Wg(passage_attn))
+            gt = torch.sigmoid(self.Wg(passage_attn))
             # print('gt size: ', gt.size())
             rnn_input = gt * passage_attn
 
