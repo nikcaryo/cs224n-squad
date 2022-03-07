@@ -388,7 +388,21 @@ class SelfMatching(nn.Module):
         v = None
         last_hidden = Variable(torch.zeros(2, batch_size, hidden_size))
         last_hidden = last_hidden.to(device)
+
         a = self.Wvp1(passage)
+        a = a.repeat(1, passage_len, 1, 1).permute([1, 0, 2, 3])
+        print('Wvp1 size: ', a.size())
+        b = self.Wvp2(passage)
+        b = b.repeat(1, passage_len, 1, 1)
+        print('Wvp2 size: ', b.size())
+        temp = a + b 
+        print('temp size', temp.size())
+        s = self.v(torch.tanh(temp))
+        a_t = F.softmax(s, dim=0)
+        # print('a_t size:',  a_t.size())
+        c_t = torch.sum(a_t * passage, dim=1)
+        print('c_t size: ', c_t.size())
+        
 
         for i in range(passage_len):
             p_word = passage[:,i,:]
@@ -398,21 +412,21 @@ class SelfMatching(nn.Module):
 
             
             # print('Wvp1 size: ', a.size())
-            b = self.Wvp2(p_word)
+            
             # print('Wvp2 size: ', b.size())
 
-            temp = a.permute(1,0,2) + b
-            # print('temp size', temp.size())
-            s = self.v(torch.tanh(temp))
-            # print('s size: ', s.size())
-            s = s.permute(1, 0, 2)
-            a_t = F.softmax(s, dim=0)
-            # print('a_t size:',  a_t.size())
-            c_t = torch.sum(a_t * passage, dim=1)
-            # print('c_t size: ', c_t.size())
+            # temp = a.permute(1,0,2) + b
+            # # print('temp size', temp.size())
+            # s = self.v(torch.tanh(temp))
+            # # print('s size: ', s.size())
+            # s = s.permute(1, 0, 2)
+            # a_t = F.softmax(s, dim=0)
+            # # print('a_t size:',  a_t.size())
+            # c_t = torch.sum(a_t * passage, dim=1)
+            # # print('c_t size: ', c_t.size())
 
             # gate
-            passage_attn = torch.cat([p_word, c_t], dim = 1)
+            passage_attn = torch.cat([c_t[i], c_t], dim = 1)
             # print('passage_attn size: ', passage_attn.size())
             gt = torch.sigmoid(self.Wg(passage_attn))
             # print('gt size: ', gt.size())
