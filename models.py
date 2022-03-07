@@ -125,6 +125,8 @@ class CharBiDAF(nn.Module):
                                      drop_prob=drop_prob)
 
         self.gated_attn = layers.GatedAttention(hidden_size=hidden_size, output_size=hidden_size, attention_size=hidden_size, drop_prob=drop_prob)
+        self.self_match = layers.SelfMatching(hidden_size=hidden_size, output_size=hidden_size, attention_size=hidden_size, drop_prob=drop_prob)
+
         self.output = output
         if output == 'bidaf':
             self.out = layers.BiDAFOutput(hidden_size=hidden_size,
@@ -151,16 +153,16 @@ class CharBiDAF(nn.Module):
 
 
 
-        gated_att = self.gated_attn(c_enc, q_enc)
-        assert(False)
-        att = self.att(c_enc, q_enc,
-                       c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+        gated_att = self.gated_attn(c_enc, q_enc) # (batch_size, c_len, 4 * hidden_size)
+        self_match = self.self_match(gated_att) # (batch_size, q_len, 4 * hidden_size)
+        # att = self.att(c_enc, q_enc,
+        #                c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 
-        mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        # mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
-        if self.output == 'bidaf':
-            out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
-        elif self.output == 'rnet':
-            out = self.out(q_enc, mod)
+        # if self.output == 'bidaf':
+        #     out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        # elif self.output == 'rnet':
+        out = self.out(q_enc, self_match)
 
         return out
