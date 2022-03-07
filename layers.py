@@ -317,17 +317,19 @@ class GatedAttention(nn.Module):
         v = None
         vtp = Variable(torch.zeros(1, batch_size, hidden_size))
         vtp = vtp.to(device)
+        a = self.Wuq(question)
+        c = self.Wvp(vtp)
 
 
         for i in range(passage_len):
             p_word = passage[:,i,:]
             # print('p_word size: ', p_word.size())
 
-            a = self.Wuq(question)
+            
             # print('wuq size: ', a.size())
             b = self.Wup(p_word)
             # print('wup size: ', b.size())
-            c = self.Wvp(vtp)
+            
             # print('wvp size: ', c.size())
             temp = a.permute(1,0,2) + b
             # print('temp size', temp.size())
@@ -386,6 +388,7 @@ class SelfMatching(nn.Module):
         v = None
         last_hidden = Variable(torch.zeros(2, batch_size, hidden_size))
         last_hidden = last_hidden.to(device)
+        a = self.Wvp1(passage)
 
         for i in range(passage_len):
             p_word = passage[:,i,:]
@@ -393,7 +396,7 @@ class SelfMatching(nn.Module):
 
             #last_hidden = torch.cat((last_hidden[0,:,:], last_hidden[1, :, :]), dim=1)
 
-            a = self.Wvp1(passage)
+            
             # print('Wvp1 size: ', a.size())
             b = self.Wvp2(p_word)
             # print('Wvp2 size: ', b.size())
