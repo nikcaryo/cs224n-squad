@@ -192,17 +192,21 @@ class CharBiDAF(nn.Module):
         # (batch_size, c_len, 8 * hidden_size)
         if self.attention_type == 'rnet':
             self_match = self.self_match(att, att, c_mask, c_mask)
+            att = self_match
+ 
+        mod = self.mod(att, c_len)
+        
         # self_match = torch.relu(self_match)
         # print(self_match.size())
         # print(self_match)
         # RNN as in RNET, but without the input dependent on output
         # (batch_size, c_len, 2 * hidden_size)
-        mod = self.mod(self_match, c_len)
+        
         # print(mod.size())
 
         if self.output_type == 'bidaf':
             # 2 tensors, each (batch_size, c_len)
-            out = self.out(self_match, mod, c_mask)
+            out = self.out(att, mod, c_mask)
         elif self.output_type == 'rnet':
             out = self.out(q_enc, mod)
         # print(out)

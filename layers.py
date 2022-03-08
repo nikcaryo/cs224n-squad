@@ -322,6 +322,10 @@ class SelfMatch2(nn.Module):
             nn.init.xavier_uniform_(weight)
         self.bias = nn.Parameter(torch.zeros(1))
 
+
+        # self.attention = nn.MultiheadAttention(hidden_size, 1, dropout=drop_prob)
+        # self.norm = nn.LayerNorm(hidden_size)
+
     def forward(self, c, q, c_mask, q_mask):
         batch_size, c_len, _ = c.size()
         q_len = q.size(1)
@@ -329,15 +333,23 @@ class SelfMatch2(nn.Module):
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
         s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
-        s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
+        # s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
 
         # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
         a = torch.bmm(s1, q)
         # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
+        # b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
         # x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
+        # print('c mask shape', c_mask.size())
+        # print(c_mask)
+        # c = c.permute(1, 0, 2)
+        # print(c.size())
+        # attention, _ = self.attention(c, c, c, attn_mask=c_mask.permute(1, 0, 2))
+        # norm = self.norm(attention)
+        # result = norm.permute(1, 0, 2)
 
+        # return c * a
         return c * a
 
     def get_similarity_matrix(self, c, q):
