@@ -113,6 +113,7 @@ class CharBiDAF(nn.Module):
         super(CharBiDAF, self).__init__()
         print('--- Model used: CharBiDAF ---')
         print('--- Model is using the following layers --- \n')
+        self.use_char = use_char
 
         if use_char:
             self.emb = layers.EmbeddingRNET(word_vectors=word_vectors,
@@ -173,10 +174,22 @@ class CharBiDAF(nn.Module):
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
+
+        cc_mask = torch.zeros_like(cc_idxs) != cc_idxs
+        qc_mask = torch.zeros_like(qc_idxs) != qc_idxs
+
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        c_emb = self.emb(cw_idxs, cc_idxs)   # (batch_size, c_len, hidden_size)
-        q_emb = self.emb(qw_idxs, qc_idxs)   # (batch_size, q_len, hidden_size)
+        cc_len, qc_len = cc_mask.sum(-1), qc_mask.sum(-1)
+
+
+        if self.use_char:
+            c_emb = self.emb(cw_idxs, cc_idxs, cc_len)   # (batch_size, c_len, hidden_size)
+            q_emb = self.emb(qw_idxs, qc_idxs, qc_len)   # (batch_size, q_len, hidden_size)
+        else:
+            c_emb = self.emb(cw_idxs)   # (batch_size, c_len, hidden_size)
+            q_emb = self.emb(qw_idxs)   # (batch_size, q_len, hidden_size)
+
 
         # Encode both the context and question with RNN
         # (batch_size, c_len, 2 * hidden_size)

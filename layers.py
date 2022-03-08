@@ -55,7 +55,7 @@ class EmbeddingRNET(nn.Module):
         drop_prob (float): Probability of zero-ing out activations
         num_layers (int): Number of layers for char-level RNN encoder.
     """
-    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, char_hidden_size, hidden_size):
+    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, char_hidden_size, hidden_size, use_mask=False):
         super(EmbeddingRNET, self).__init__()
         self.drop_prob = drop_prob
         self.embed_word = nn.Embedding.from_pretrained(word_vectors)
@@ -65,6 +65,8 @@ class EmbeddingRNET(nn.Module):
         self.char_hidden_size = char_hidden_size
 
         emb_size = word_vectors.size(1) + 2 * char_hidden_size
+
+        self.use_mask = use_mask
 
         self.proj = nn.Linear(emb_size, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
@@ -78,7 +80,9 @@ class EmbeddingRNET(nn.Module):
             batch_first = True,
         )
 
-    def forward(self, w_idxs, c_idxs):
+        self.char_encoder_new = RNNEncoder(char_vectors.size(1), self.char_hidden_size, self.num_layers, self.drop_prob, lstm=False, return_hidden=True)
+
+    def forward(self, w_idxs, c_idxs, char_lens):
 
         emb_word = self.embed_word(w_idxs)   # (batch_size, seq_len, embed_size)
         emb_chars = self.embed_char(c_idxs)  # (batch_size, seq_char_len, max_chars, char_embed_size)
@@ -89,9 +93,18 @@ class EmbeddingRNET(nn.Module):
         # reshape so that a 'batch' is a single word, 
         batch_size, seq_len, max_len, char_embed_size = emb_chars.size()
         emb_chars = emb_chars.view(batch_size * seq_len, max_len, char_embed_size)
+        print(char_lens.size())
 
         # for each word, feed each char into the rnn
-        _, hn = self.char_encoder(emb_chars)
+        if not self.use_mask:
+            _, hn = self.char_encoder(emb_chars)
+        else:
+
+            char_lens = char_lens.view(batch_size * seq_len)
+            print('char lens', char_lens.size())
+            hn = self.char_encoder_new(emb_chars, char_lens)
+
+
 
         # reshape so that we match the first two dims of emb_words
         # meaning, for each batch, for each seq, each learned char-word embedding
@@ -155,9 +168,11 @@ class RNNEncoder(nn.Module):
                  hidden_size,
                  num_layers,
                  drop_prob=0.,
-                 lstm=True):
+                 lstm=True,
+                 return_hidden=False):
         super(RNNEncoder, self).__init__()
         self.drop_prob = drop_prob
+        self.return_hidden = return_hidden
         if lstm:
             self.rnn = nn.LSTM(input_size, hidden_size, num_layers,
                             batch_first=True,
@@ -179,7 +194,10 @@ class RNNEncoder(nn.Module):
         x = pack_padded_sequence(x, lengths.cpu(), batch_first=True)
 
         # Apply RNN
-        x, _ = self.rnn(x)  # (batch_size, seq_len, 2 * hidden_size)
+        x, hidden = self.rnn(x)  # (batch_size, seq_len, 2 * hidden_size)
+
+        if self.return_hidden:
+            return hidden
 
         # Unpack and reverse sort
         x, _ = pad_packed_sequence(x, batch_first=True, total_length=orig_len)
@@ -315,8 +333,8 @@ class SelfMatch2(nn.Module):
     def __init__(self, hidden_size, drop_prob=0.1):
         super(SelfMatch2, self).__init__()
         self.drop_prob = drop_prob
-        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
         self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
         self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
         for weight in (self.c_weight, self.q_weight, self.cq_weight):
             nn.init.xavier_uniform_(weight)
@@ -350,6 +368,7 @@ class SelfMatch2(nn.Module):
         # result = norm.permute(1, 0, 2)
 
         # return c * a
+        
         return c * a
 
     def get_similarity_matrix(self, c, q):
