@@ -93,7 +93,6 @@ class EmbeddingRNET(nn.Module):
         # reshape so that a 'batch' is a single word, 
         batch_size, seq_len, max_len, char_embed_size = emb_chars.size()
         emb_chars = emb_chars.view(batch_size * seq_len, max_len, char_embed_size)
-        print(char_lens.size())
 
         # for each word, feed each char into the rnn
         if not self.use_mask:
@@ -101,7 +100,6 @@ class EmbeddingRNET(nn.Module):
         else:
 
             char_lens = char_lens.view(batch_size * seq_len)
-            print('char lens', char_lens.size())
             hn = self.char_encoder_new(emb_chars, char_lens)
 
 
