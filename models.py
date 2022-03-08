@@ -116,19 +116,19 @@ class CharBiDAF(nn.Module):
                                      num_layers=1,
                                      drop_prob=drop_prob)
 
-        # self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-        #                                  drop_prob=drop_prob)
+        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+                                         drop_prob=drop_prob)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
-                                     num_layers=2,
-                                     drop_prob=drop_prob)
+                                     num_layers=1,
+                                     drop_prob=drop_prob,
+                                     lstm=True)
 
-        self.gated_attn = layers.GatedAttention(hidden_size=hidden_size, output_size=hidden_size, attention_size=hidden_size, drop_prob=drop_prob)
-        self.self_match = layers.SelfMatching(hidden_size=hidden_size, output_size=hidden_size, attention_size=hidden_size, drop_prob=drop_prob)
+        self.self_match = layers.SelfMatch2(hidden_size=hidden_size * 8, drop_prob=drop_prob)
 
-        self.output = output
-        if output == 'bidaf':
+        self.output = 'bidaf'
+        if self.output == 'bidaf':
             self.out = layers.BiDAFOutput(hidden_size=hidden_size,
                                         drop_prob=drop_prob)
         elif output == 'rnet':
@@ -151,18 +151,23 @@ class CharBiDAF(nn.Module):
         c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
         q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
 
-
-
-        gated_att = self.gated_attn(c_enc, q_enc) # (batch_size, c_len, 4 * hidden_size)
-        self_match = self.self_match(gated_att) # (batch_size, q_len, 4 * hidden_size)
-        # att = self.att(c_enc, q_enc,
-        #                c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
-
-        # mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
-
-        # if self.output == 'bidaf':
-        #     out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
-        # elif self.output == 'rnet':
-        out = self.out(q_enc, self_match)
+        # Equiv to gated attention
+        att = self.att(c_enc, q_enc,
+                       c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+        # print(att)
+        # Self matching attention
+        self_match = self.self_match(att, att, c_mask, c_mask) # (batch_size, c_len, 8 * hidden_size)
+        # self_match = torch.relu(self_match)
+        # print(self_match.size())
+        # print(self_match)
+        # RNN as in RNET, but without the input dependent on output
+        mod = self.mod(self_match, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        # print(mod.size())
+        
+        if self.output == 'bidaf':
+            out = self.out(self_match, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        elif self.output == 'rnet':
+            out = self.out(q_enc, mod)
+        # print(out)
 
         return out

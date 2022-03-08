@@ -6,7 +6,7 @@ Author:
 
 from unicodedata import bidirectional
 
-from numpy import s_
+from numpy import True_, s_
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -154,13 +154,20 @@ class RNNEncoder(nn.Module):
                  input_size,
                  hidden_size,
                  num_layers,
-                 drop_prob=0.):
+                 drop_prob=0.,
+                 lstm=True):
         super(RNNEncoder, self).__init__()
         self.drop_prob = drop_prob
-        self.rnn = nn.LSTM(input_size, hidden_size, num_layers,
-                           batch_first=True,
-                           bidirectional=True,
-                           dropout=drop_prob if num_layers > 1 else 0.)
+        if lstm:
+            self.rnn = nn.LSTM(input_size, hidden_size, num_layers,
+                            batch_first=True,
+                            bidirectional=True,
+                            dropout=drop_prob if num_layers > 1 else 0.)
+        else:
+            self.rnn = nn.GRU(input_size, hidden_size, num_layers,
+                            batch_first=True,
+                            bidirectional=True,
+                            dropout=drop_prob if num_layers > 1 else 0.)
 
     def forward(self, x, lengths):
         # Save original padded length for use by pad_packed_sequence
@@ -291,153 +298,71 @@ class BiDAFOutput(nn.Module):
 
         return log_p1, log_p2
 
-class GatedAttention(nn.Module):
-    def __init__(self, hidden_size, output_size, attention_size, drop_prob):
-        super(GatedAttention, self).__init__()
-        self.GRU = nn.GRU(hidden_size * 4, hidden_size * 2, batch_first = True, dropout=drop_prob, bidirectional=False)
 
-        self.Wuq = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
-        self.Wup = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
-        self.Wvp = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
 
-        self.Wg = nn.Linear(hidden_size * 4, hidden_size * 4, bias=False)
-        
+class SelfMatch2(nn.Module):
+    """General-purpose layer for encoding a sequence using a bidirectional RNN.
 
-        self.v = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+    Encoded output is the RNN's hidden state at each position, which
+    has shape `(batch_size, seq_len, hidden_size * 2)`.
 
+    Args:
+        input_size (int): Size of a single timestep in the input.
+        hidden_size (int): Size of the RNN hidden state.
+        num_layers (int): Number of layers of RNN cells to use.
+        drop_prob (float): Probability of zero-ing out activations.
+    """
+    def __init__(self, hidden_size, drop_prob=0.1):
+        super(SelfMatch2, self).__init__()
         self.drop_prob = drop_prob
-        self.output_size = output_size
-        
-    def forward(self, passage, question, mask=None):
-        batch_size, passage_len, hidden_size = passage.size()
-        # print('passage size: ', passage.size())
-        _, question_len, _ = question.size()
-        # print('question size: ', question.size())
+        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        for weight in (self.c_weight, self.q_weight, self.cq_weight):
+            nn.init.xavier_uniform_(weight)
+        self.bias = nn.Parameter(torch.zeros(1))
 
-        v = None
-        vtp = Variable(torch.zeros(1, batch_size, hidden_size))
-        vtp = vtp.to(device)
-        a = self.Wuq(question)
-        c = self.Wvp(vtp)
+    def forward(self, c, q, c_mask, q_mask):
+        batch_size, c_len, _ = c.size()
+        q_len = q.size(1)
+        s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
+        c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
+        q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
+        s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
+        s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
 
+        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
+        a = torch.bmm(s1, q)
+        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
+        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
-        for i in range(passage_len):
-            p_word = passage[:,i,:]
-            # print('p_word size: ', p_word.size())
+        # x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
 
-            
-            # print('wuq size: ', a.size())
-            b = self.Wup(p_word)
-            # print('wup size: ', b.size())
-            
-            # print('wvp size: ', c.size())
-            temp = a.permute(1,0,2) + b
-            # print('temp size', temp.size())
-            s = self.v(torch.tanh(temp + c))
-            # print('s size: ', s.size())
-            s = s.permute(1, 0, 2)
-            a_t = F.softmax(s, dim=0)
-            # print('a_t size:',  a_t.size())
-            c_t = torch.sum(a_t * question, dim=1)
-            # print('c_t size: ', c_t.size())
+        return c * a
 
-            # gate
-            passage_attn = torch.cat([p_word, c_t], dim = 1)
-            # print('passage_attn size: ', passage_attn.size())
-            gt = torch.sigmoid(self.Wg(passage_attn))
-            # print('gt size: ', gt.size())
-            rnn_input = gt * passage_attn
+    def get_similarity_matrix(self, c, q):
+        """Get the "similarity matrix" between context and query (using the
+        terminology of the BiDAF paper).
 
-            # unsqueeze?
-            rnn_input = rnn_input.unsqueeze(1)
-            # print('rnn_input size: ', rnn_input.size())
+        A naive implementation as described in BiDAF would concatenate the
+        three vectors then project the result with a single weight matrix. This
+        method is a more memory-efficient implementation of the same operation.
 
+        See Also:
+            Equation 1 in https://arxiv.org/abs/1611.01603
+        """
+        c_len, q_len = c.size(1), q.size(1)
+        c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
+        q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
 
-            output, vtp = self.GRU(rnn_input, vtp)
-            
-            # print('vtp size part 2: ', vtp.size())
+        # Shapes: (batch_size, c_len, q_len)
+        s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
+        s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
+                                           .expand([-1, c_len, -1])
+        s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
+        s = s0 + s1 + s2 + self.bias
 
-            if v is None:
-                v = vtp
-            else:
-                v = torch.cat((v, vtp), dim=0)
-        v = v.permute(1, 0, 2)
-        # print('final v size:', v.size())
-
-        return v
-
-
-class SelfMatching(nn.Module):
-    def __init__(self, hidden_size, output_size, attention_size, drop_prob):
-        super(SelfMatching, self).__init__()
-        self.GRU = nn.GRU(hidden_size * 4, hidden_size * 2, batch_first = True, dropout=drop_prob, bidirectional=True)
-
-        self.Wvp1 = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
-        self.Wvp2 = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
-        self.v = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
-
-        self.Wg = nn.Linear(hidden_size * 4, hidden_size * 4, bias=False)
-        
-        self.drop_prob = drop_prob
-        self.output_size = output_size
-        
-    def forward(self, passage, mask=None):
-        batch_size, passage_len, hidden_size = passage.size()
-        # print('passage size: ', passage.size())
-
-        v = None
-        last_hidden = Variable(torch.zeros(2, batch_size, hidden_size))
-        last_hidden = last_hidden.to(device)
-        a = self.Wvp1(passage)
-
-        for i in range(passage_len):
-            p_word = passage[:,i,:]
-            # print('p_word size: ', p_word.size())
-
-            #last_hidden = torch.cat((last_hidden[0,:,:], last_hidden[1, :, :]), dim=1)
-
-            
-            # print('Wvp1 size: ', a.size())
-            b = self.Wvp2(p_word)
-            # print('Wvp2 size: ', b.size())
-
-            temp = a.permute(1,0,2) + b
-            # print('temp size', temp.size())
-            s = self.v(torch.tanh(temp))
-            # print('s size: ', s.size())
-            s = s.permute(1, 0, 2)
-            a_t = F.softmax(s, dim=0)
-            # print('a_t size:',  a_t.size())
-            c_t = torch.sum(a_t * passage, dim=1)
-            # print('c_t size: ', c_t.size())
-
-            # gate
-            passage_attn = torch.cat([p_word, c_t], dim = 1)
-            # print('passage_attn size: ', passage_attn.size())
-            gt = torch.sigmoid(self.Wg(passage_attn))
-            # print('gt size: ', gt.size())
-            rnn_input = gt * passage_attn
-
-            # unsqueeze?
-            rnn_input = rnn_input.unsqueeze(1)
-            # print('rnn_input size: ', rnn_input.size())
-
-
-            output, last_hidden = self.GRU(rnn_input, last_hidden)
-            last_hidden_temp = torch.cat((last_hidden[0,:,:], last_hidden[1, :, :]), dim=1)
-            last_hidden_temp = last_hidden_temp.unsqueeze(0)
-            # print('vtp size part 2: ', last_hidden.size())
-
-            if v is None:
-                v = last_hidden_temp
-            else:
-                v = torch.cat((v, last_hidden_temp), dim=0)
-        v = v.permute(1, 0, 2)
-        # print('final v size:', v.size())
-        return v
-
-
-
+        return s
 
 
 class OutputRNET(nn.Module):
@@ -449,24 +374,25 @@ class OutputRNET(nn.Module):
     """
     def __init__(self, hidden_size, drop_prob, attention_size):
         super(OutputRNET, self).__init__()
-        self.W_h_P = nn.Linear(4 * hidden_size, attention_size)
+        self.W_h_P = nn.Linear(2 * hidden_size, attention_size)
         self.W_h_a = nn.Linear(2 * hidden_size, attention_size)
         self.v_T = nn.Linear(attention_size, 1)
-        self.gru = nn.GRUCell(4 * hidden_size, 2 * hidden_size)
-
-
+        self.gru = nn.GRUCell(2 * hidden_size, 2 * hidden_size)
+        
+        self.v_r_q = nn.Parameter(torch.zeros(1, attention_size))
+        self.W_v_q = nn.Linear(attention_size, attention_size)
 
         # input size = 2 * hidden_size
         self.W_u_Q = nn.Linear(2 * hidden_size, attention_size)
         self.v_T_r = nn.Linear(attention_size, 1)
+
 
     def forward(self, q_enc, x):
 
         # initial state: rQ = h_init
         # x = x.permute(1, 0, 2)
         # q_enc = q_enc.permute(1, 0, 2)
-
-        s = torch.tanh(self.W_u_Q(q_enc))
+        s = torch.tanh(self.W_u_Q(q_enc ) + self.W_v_q(self.v_r_q))
         s = self.v_T_r(s)
         # print('s size', s.size())
         a = F.softmax(s, dim=1)
@@ -480,10 +406,11 @@ class OutputRNET(nn.Module):
         s_1 = self.W_h_P(x)
         s_2 = self.W_h_a(h_init)
 
+
         # print('s_1', s_1.size())
         # print('s_2', s_2.size())
 
-        s_start = torch.tanh(s_1+ s_2)
+        s_start = torch.tanh(s_1 + s_2)
         # print('s_start', s_start.size())
         s_start = self.v_T(s_start)
         log_p_start = F.log_softmax(s_start, dim=1)
@@ -501,9 +428,148 @@ class OutputRNET(nn.Module):
         log_p_end = F.log_softmax(s_end, dim=1)
 
         # print('log p end', log_p_end.size())
-
-
-
-
         # (batch_size, c_len) * 2
         return log_p_start.squeeze(-1), log_p_end.squeeze(-1)
+
+
+# class GatedAttention(nn.Module):
+#     def __init__(self, hidden_size, output_size, attention_size, drop_prob):
+#         super(GatedAttention, self).__init__()
+#         self.GRU = nn.GRU(hidden_size * 4, hidden_size * 2, batch_first = True, dropout=drop_prob, bidirectional=False)
+
+#         self.Wuq = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+#         self.Wup = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+#         self.Wvp = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+
+#         self.Wg = nn.Linear(hidden_size * 4, hidden_size * 4, bias=False)
+        
+
+#         self.v = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+
+#         self.drop_prob = drop_prob
+#         self.output_size = output_size
+        
+#     def forward(self, passage, question, mask=None):
+#         batch_size, passage_len, hidden_size = passage.size()
+#         # print('passage size: ', passage.size())
+#         _, question_len, _ = question.size()
+#         # print('question size: ', question.size())
+
+#         v = None
+#         vtp = Variable(torch.zeros(1, batch_size, hidden_size))
+#         vtp = vtp.to(device)
+#         a = self.Wuq(question)
+#         c = self.Wvp(vtp)
+
+
+#         for i in range(passage_len):
+#             p_word = passage[:,i,:]
+#             # print('p_word size: ', p_word.size())
+
+            
+#             # print('wuq size: ', a.size())
+#             b = self.Wup(p_word)
+#             # print('wup size: ', b.size())
+            
+#             # print('wvp size: ', c.size())
+#             temp = a.permute(1,0,2) + b
+#             # print('temp size', temp.size())
+#             s = self.v(torch.tanh(temp + c))
+#             # print('s size: ', s.size())
+#             s = s.permute(1, 0, 2)
+#             a_t = F.softmax(s, dim=0)
+#             # print('a_t size:',  a_t.size())
+#             c_t = torch.sum(a_t * question, dim=1)
+#             # print('c_t size: ', c_t.size())
+
+#             # gate
+#             passage_attn = torch.cat([p_word, c_t], dim = 1)
+#             # print('passage_attn size: ', passage_attn.size())
+#             gt = torch.sigmoid(self.Wg(passage_attn))
+#             # print('gt size: ', gt.size())
+#             rnn_input = gt * passage_attn
+
+#             # unsqueeze?
+#             rnn_input = rnn_input.unsqueeze(1)
+#             # print('rnn_input size: ', rnn_input.size())
+
+
+#             output, vtp = self.GRU(rnn_input, vtp)
+            
+#             # print('vtp size part 2: ', vtp.size())
+
+#             if v is None:
+#                 v = vtp
+#             else:
+#                 v = torch.cat((v, vtp), dim=0)
+#         v = v.permute(1, 0, 2)
+#         # print('final v size:', v.size())
+
+#         return v
+
+
+# class SelfMatching(nn.Module):
+#     def __init__(self, hidden_size, output_size, attention_size, drop_prob):
+#         super(SelfMatching, self).__init__()
+#         self.GRU = nn.GRU(hidden_size * 4, hidden_size * 2, batch_first = True, dropout=drop_prob, bidirectional=True)
+
+#         self.Wvp1 = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+#         self.Wvp2 = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+#         self.v = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+
+#         self.Wg = nn.Linear(hidden_size * 4, hidden_size * 4, bias=False)
+        
+#         self.drop_prob = drop_prob
+#         self.output_size = output_size
+        
+#     def forward(self, passage, mask=None):
+#         batch_size, passage_len, hidden_size = passage.size()
+#         # print('passage size: ', passage.size())
+
+#         v = None
+#         last_hidden = Variable(torch.zeros(2, batch_size, hidden_size))
+#         last_hidden = last_hidden.to(device)
+#         a = self.Wvp1(passage)
+
+#         for i in range(passage_len):
+#             p_word = passage[:,i,:]
+#             # print('p_word size: ', p_word.size())
+            
+#             # print('Wvp1 size: ', a.size())
+#             b = self.Wvp2(p_word)
+#             # print('Wvp2 size: ', b.size())
+
+#             temp = a.permute(1,0,2) + b
+#             # print('temp size', temp.size())
+#             s = self.v(torch.tanh(temp))
+#             # print('s size: ', s.size())
+#             s = s.permute(1, 0, 2)
+#             a_t = F.softmax(s, dim=0)
+#             # print('a_t size:',  a_t.size())
+#             c_t = torch.sum(a_t * passage, dim=1)
+#             # print('c_t size: ', c_t.size())
+
+#             # gate
+#             passage_attn = torch.cat([p_word, c_t], dim = 1)
+#             # print('passage_attn size: ', passage_attn.size())
+#             gt = torch.sigmoid(self.Wg(passage_attn))
+#             # print('gt size: ', gt.size())
+#             rnn_input = gt * passage_attn
+
+#             # unsqueeze?
+#             rnn_input = rnn_input.unsqueeze(1)
+#             # print('rnn_input size: ', rnn_input.size())
+
+
+#             output, last_hidden = self.GRU(rnn_input, last_hidden)
+#             last_hidden_temp = torch.cat((last_hidden[0,:,:], last_hidden[1, :, :]), dim=1)
+#             last_hidden_temp = last_hidden_temp.unsqueeze(0)
+#             # print('vtp size part 2: ', last_hidden.size())
+
+#             if v is None:
+#                 v = last_hidden_temp
+#             else:
+#                 v = torch.cat((v, last_hidden_temp), dim=0)
+#         v = v.permute(1, 0, 2)
+#         # print('final v size:', v.size())
+#         return v
