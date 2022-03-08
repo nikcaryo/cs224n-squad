@@ -148,7 +148,7 @@ class CharBiDAF(nn.Module):
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob,
-                                     lstm=True)
+                                     lstm=False)
         print('layers.RNNEncoder')
 
         self.attention_type = attention

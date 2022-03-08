@@ -120,12 +120,12 @@ def main(args):
 
                 # Forward
                 log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
-                print('model start', torch.argmax(log_p1, -1))
-                print('model end', torch.argmax(log_p2, -1))
+                # print('model start', torch.argmax(log_p1, -1))
+                # print('model end', torch.argmax(log_p2, -1))
 
                 y1, y2 = y1.to(device), y2.to(device)
-                print('true start', y1)
-                print('true end', y2)
+                # print('true start', y1)
+                # print('true end', y2)
 
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
