@@ -214,7 +214,21 @@ def add_train_test_args(parser):
                         type=str,
                         required=True,
                         help='Which model to use.')
-
+    parser.add_argument('--output',
+                        '-o',
+                        type=str,
+                        required=True,
+                        help='Which output layer to use.')
+    parser.add_argument('--attention',
+                        '-a',
+                        type=str,
+                        required=True,
+                        help='Which attention layer to use.')
+    parser.add_argument('--use_char',
+                        '-uc',
+                        type=lambda s: s.lower().startswith('t'),
+                        default=True,
+                        help='to use char embeddings or not')
     parser.add_argument('--max_ans_len',
                         type=int,
                         default=15,

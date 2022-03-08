@@ -29,55 +29,63 @@ class BiDAF(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
+
     def __init__(self, word_vectors, hidden_size, drop_prob=0.,):
         super(BiDAF, self).__init__()
+        print('--- Model used: BiDAF ---')
+        print('--- Model is using the following layers --- \n')
 
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     hidden_size=hidden_size,
                                     drop_prob=drop_prob)
-       
+        print('layers.Embedding')
 
         self.enc = layers.RNNEncoder(input_size=hidden_size,
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob)
+        print('layers.RNNEncoder')
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob)
+        print('layers.BiDAFAttention')
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
                                      num_layers=2,
                                      drop_prob=drop_prob)
+        print('layers.RNNEncoder')
 
         self.out = layers.BiDAFOutput(hidden_size=hidden_size,
                                       drop_prob=drop_prob)
+        print('layers.BiDAFOutput \n')
+        print('--- Time to train/test! --- \n')
 
     # match this forward to charbidaf to make train/eval easier
-    def forward(self, cw_idxs, qw_idxs, cc_idxs = [], qc_idxs = []):
+    def forward(self, cw_idxs, qw_idxs, cc_idxs=[], qc_idxs=[]):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
-        # Lookup the word level embeddings + refine them with the highway network 
+        # Lookup the word level embeddings + refine them with the highway network
         c_emb = self.emb(cw_idxs)         # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs)         # (batch_size, q_len, hidden_size)
 
-
-        # Encode both the context and question with RNN 
-        c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
-        q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
-
+        # Encode both the context and question with RNN
+        # (batch_size, c_len, 2 * hidden_size)
+        c_enc = self.enc(c_emb, c_len)
+        # (batch_size, q_len, 2 * hidden_size)
+        q_enc = self.enc(q_emb, q_len)
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 
-        mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        # (batch_size, c_len, 2 * hidden_size)
+        mod = self.mod(att, c_len)
 
         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         return out
-
 
 
 class CharBiDAF(nn.Module):
@@ -100,44 +108,67 @@ class CharBiDAF(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, hidden_size, char_vectors, char_hidden_size, drop_prob=0. , output='rnet', attention_size=100):
-        super(CharBiDAF, self).__init__()
 
-        print('enc input size', word_vectors.size(1) + hidden_size)
-        self.emb = layers.EmbeddingRNET(word_vectors=word_vectors,
-                                    char_vectors=char_vectors,
-                                    char_hidden_size=char_hidden_size,
-                                    hidden_size=hidden_size,
-                                    drop_prob=drop_prob,
-                                    num_layers=2)
-            
-        self.enc = layers.RNNEncoder(input_size= word_vectors.size(1) + 2 * char_hidden_size,
+    def __init__(self, word_vectors, hidden_size, char_vectors, char_hidden_size, use_char, attention, drop_prob=0.2, output='rnet', attention_size=100):
+        super(CharBiDAF, self).__init__()
+        print('--- Model used: CharBiDAF ---')
+        print('--- Model is using the following layers --- \n')
+
+        if use_char:
+            self.emb = layers.EmbeddingRNET(word_vectors=word_vectors,
+                                            char_vectors=char_vectors,
+                                            char_hidden_size=char_hidden_size,
+                                            hidden_size=hidden_size,
+                                            drop_prob=drop_prob,
+                                            num_layers=2)
+            print('layers.EmbeddingRNET')
+        else:
+            self.emb = layers.Embedding(word_vectors=word_vectors,
+                                        hidden_size=hidden_size,
+                                        drop_prob=drop_prob)
+            print('layers.Embedding')
+
+        # get correct input size based on use of char embettings or not
+        rnn_encoder_input_size = hidden_size
+        if use_char:
+            rnn_encoder_input_size = word_vectors.size(
+                1) + 2 * char_hidden_size
+
+        self.enc = layers.RNNEncoder(input_size=rnn_encoder_input_size,
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob)
+        print('layers.RNNEncoder')
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob)
+        print('layers.BiDAFAttention')
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob,
                                      lstm=True)
+        print('layers.RNNEncoder')
 
-        self.self_match = layers.SelfMatch2(hidden_size=hidden_size * 8, drop_prob=drop_prob)
+        self.attention_type = attention
+        if self.attention_type == 'rnet':
+            self.self_match = layers.SelfMatch2(
+                hidden_size=hidden_size * 8, drop_prob=drop_prob)
+            print('layers.SelfMatch2')
 
-        self.output = 'bidaf'
-        if self.output == 'bidaf':
+        self.output_type = output
+        if self.output_type == 'bidaf':
             self.out = layers.BiDAFOutput(hidden_size=hidden_size,
-                                        drop_prob=drop_prob)
-        elif output == 'rnet':
+                                          drop_prob=drop_prob)
+            print('layers.BiDAFOutput \n')
+        elif self.output_type == 'rnet':
             self.out = layers.OutputRNET(hidden_size=hidden_size,
-                                        drop_prob=drop_prob,
-                                        attention_size=attention_size,
-                )
-
-
+                                         drop_prob=drop_prob,
+                                         attention_size=attention_size,
+                                         )
+            print('layers.OutputRNET \n')
+        print('--- Time to train/test! --- \n')
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
@@ -147,26 +178,32 @@ class CharBiDAF(nn.Module):
         c_emb = self.emb(cw_idxs, cc_idxs)   # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs, qc_idxs)   # (batch_size, q_len, hidden_size)
 
-        # Encode both the context and question with RNN 
-        c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
-        q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
+        # Encode both the context and question with RNN
+        # (batch_size, c_len, 2 * hidden_size)
+        c_enc = self.enc(c_emb, c_len)
+        # (batch_size, q_len, 2 * hidden_size)
+        q_enc = self.enc(q_emb, q_len)
 
         # Equiv to gated attention
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
         # print(att)
         # Self matching attention
-        self_match = self.self_match(att, att, c_mask, c_mask) # (batch_size, c_len, 8 * hidden_size)
+        # (batch_size, c_len, 8 * hidden_size)
+        if self.attention_type == 'rnet':
+            self_match = self.self_match(att, att, c_mask, c_mask)
         # self_match = torch.relu(self_match)
         # print(self_match.size())
         # print(self_match)
         # RNN as in RNET, but without the input dependent on output
-        mod = self.mod(self_match, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        # (batch_size, c_len, 2 * hidden_size)
+        mod = self.mod(self_match, c_len)
         # print(mod.size())
-        
-        if self.output == 'bidaf':
-            out = self.out(self_match, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
-        elif self.output == 'rnet':
+
+        if self.output_type == 'bidaf':
+            # 2 tensors, each (batch_size, c_len)
+            out = self.out(self_match, mod, c_mask)
+        elif self.output_type == 'rnet':
             out = self.out(q_enc, mod)
         # print(out)
 

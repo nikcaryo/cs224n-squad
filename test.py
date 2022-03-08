@@ -12,6 +12,8 @@ Author:
 """
 
 import csv
+
+from numpy import outer
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -41,18 +43,22 @@ def main(args):
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
     char_vectors = util.torch_from_json(args.char_emb_file)
-    
+
     # Get model
     log.info('Building model...')
     if args.model == 'bidaf':
         model = BiDAF(word_vectors=word_vectors,
-                  hidden_size=args.hidden_size)
+                      hidden_size=args.hidden_size)
     elif args.model == 'charbidaf':
         model = CharBiDAF(word_vectors=word_vectors,
-                    char_vectors=char_vectors,
-                    char_hidden_size=args.char_hidden_size,
-                    hidden_size=args.hidden_size)
-               
+                          char_vectors=char_vectors,
+                          char_hidden_size=args.char_hidden_size,
+                          use_char=args.use_char,
+                          hidden_size=args.hidden_size,
+                          drop_prob=args.drop_prob,
+                          attention=args.attention,
+                          output=args.output)
+
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
@@ -95,7 +101,8 @@ def main(args):
 
             # Get F1 and EM scores
             p1, p2 = log_p1.exp(), log_p2.exp()
-            starts, ends = util.discretize(p1, p2, args.max_ans_len, args.use_squad_v2)
+            starts, ends = util.discretize(
+                p1, p2, args.max_ans_len, args.use_squad_v2)
 
             # Log info
             progress_bar.update(batch_size)

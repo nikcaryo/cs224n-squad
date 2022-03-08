@@ -49,16 +49,18 @@ def main(args):
     log.info('Building model...')
     if args.model == 'bidaf':
         model = BiDAF(word_vectors=word_vectors,
-                    hidden_size=args.hidden_size,
-                    drop_prob=args.drop_prob)
+                      hidden_size=args.hidden_size,
+                      drop_prob=args.drop_prob)
     elif args.model == 'charbidaf':
         model = CharBiDAF(word_vectors=word_vectors,
-                    char_vectors=char_vectors,
-                    char_hidden_size=args.char_hidden_size,
-                    hidden_size=args.hidden_size,
-                    drop_prob=args.drop_prob)
+                          char_vectors=char_vectors,
+                          char_hidden_size=args.char_hidden_size,
+                          use_char=args.use_char,
+                          hidden_size=args.hidden_size,
+                          drop_prob=args.drop_prob,
+                          attention=args.attention,
+                          output=args.output)
 
-    
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -111,7 +113,6 @@ def main(args):
                 qw_idxs = qw_idxs.to(device)
                 cc_idxs = cc_idxs.to(device)
                 qc_idxs = qc_idxs.to(device)
-                
 
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
@@ -127,7 +128,8 @@ def main(args):
 
                 # Backward
                 loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                nn.utils.clip_grad_norm_(
+                    model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 scheduler.step(step // batch_size)
                 ema(model, step // batch_size)
@@ -157,7 +159,8 @@ def main(args):
                     ema.resume(model)
 
                     # Log to console
-                    results_str = ', '.join(f'{k}: {v:05.2f}' for k, v in results.items())
+                    results_str = ', '.join(
+                        f'{k}: {v:05.2f}' for k, v in results.items())
                     log.info(f'Dev {results_str}')
 
                     # Log to TensorBoard
@@ -193,7 +196,6 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
             # Forward
             log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)
-
 
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
