@@ -83,8 +83,8 @@ class EmbeddingRNET(nn.Module):
         emb_word = self.embed_word(w_idxs)   # (batch_size, seq_len, embed_size)
         emb_chars = self.embed_char(c_idxs)  # (batch_size, seq_char_len, max_chars, char_embed_size)
 
-        emb_word = F.dropout(emb_word, self.drop_prob)
-        emb_chars = F.dropout(emb_chars, self.drop_prob)
+        emb_word = F.dropout(emb_word, self.drop_prob, self.training)
+        emb_chars = F.dropout(emb_chars, self.drop_prob, self.training)
 
         # reshape so that a 'batch' is a single word, 
         batch_size, seq_len, max_len, char_embed_size = emb_chars.size()
