@@ -55,7 +55,7 @@ class EmbeddingRNET(nn.Module):
         drop_prob (float): Probability of zero-ing out activations
         num_layers (int): Number of layers for char-level RNN encoder.
     """
-    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, char_hidden_size, hidden_size, use_mask=False):
+    def __init__(self, word_vectors, char_vectors, drop_prob, num_layers, char_hidden_size, hidden_size, char_mask=False):
         super(EmbeddingRNET, self).__init__()
         self.drop_prob = drop_prob
         self.embed_word = nn.Embedding.from_pretrained(word_vectors)
@@ -66,7 +66,7 @@ class EmbeddingRNET(nn.Module):
 
         emb_size = word_vectors.size(1) + 2 * char_hidden_size
 
-        self.use_mask = use_mask
+        self.char_mask = char_mask
 
         self.proj = nn.Linear(emb_size, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
@@ -95,13 +95,17 @@ class EmbeddingRNET(nn.Module):
         emb_chars = emb_chars.view(batch_size * seq_len, max_len, char_embed_size)
 
         # for each word, feed each char into the rnn
-        if not self.use_mask:
+        if not self.char_mask:
             _, hn = self.char_encoder(emb_chars)
         else:
-
             char_lens = char_lens.view(batch_size * seq_len)
+            # trick: tell the rnn that the blank words have 1 char each
+            # these words will get ignored later anyways
+            # this lets us use the existing RNNEncoder with packed/padded etc for speed
+            zero = (char_lens == 0).nonzero()
+            char_lens[zero] = 1
             hn = self.char_encoder_new(emb_chars, char_lens)
-
+            hn[:, zero, : ] = 0
 
 
         # reshape so that we match the first two dims of emb_words

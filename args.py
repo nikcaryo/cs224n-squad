@@ -229,6 +229,11 @@ def add_train_test_args(parser):
                         type=lambda s: s.lower().startswith('t'),
                         default=True,
                         help='to use char embeddings or not')
+    parser.add_argument('--char_mask',
+                        '-cm',
+                        type=lambda s: s.lower().startswith('t'),
+                        default=False,
+                        help='to use faster char embeddings')
     parser.add_argument('--max_ans_len',
                         type=int,
                         default=15,

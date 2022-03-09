@@ -60,7 +60,8 @@ def main(args):
                           hidden_size=args.hidden_size,
                           drop_prob=args.drop_prob,
                           attention=args.attention,
-                          output=args.output)
+                          output=args.output, 
+                          char_mask = args.char_mask)
 
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:

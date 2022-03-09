@@ -109,7 +109,7 @@ class CharBiDAF(nn.Module):
         drop_prob (float): Dropout probability.
     """
 
-    def __init__(self, word_vectors, hidden_size, char_vectors, char_hidden_size, use_char, attention, drop_prob=0.2, output='rnet', attention_size=100):
+    def __init__(self, word_vectors, hidden_size, char_vectors, char_hidden_size, use_char, attention, drop_prob=0.2, output='rnet', attention_size=100, char_mask=False):
         super(CharBiDAF, self).__init__()
         print('--- Model used: CharBiDAF ---')
         print('--- Model is using the following layers --- \n')
@@ -121,7 +121,8 @@ class CharBiDAF(nn.Module):
                                             char_hidden_size=char_hidden_size,
                                             hidden_size=hidden_size,
                                             drop_prob=drop_prob,
-                                            num_layers=2)
+                                            num_layers=2, 
+                                            char_mask = char_mask)
             print('layers.EmbeddingRNET')
         else:
             self.emb = layers.Embedding(word_vectors=word_vectors,
