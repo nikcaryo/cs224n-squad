@@ -155,8 +155,8 @@ class CharBiDAF(nn.Module):
         self.attention_type = attention
         if self.attention_type == 'rnet':
             self.self_match = layers.SelfMatch2(
-                hidden_size=hidden_size * 8, drop_prob=drop_prob)
-            self.mod2 = layers.RNNEncoder(input_size=8 * hidden_size,
+                hidden_size=hidden_size * 2, drop_prob=drop_prob)
+            self.mod2 = layers.RNNEncoder(input_size=6 * hidden_size,
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob,
@@ -204,13 +204,15 @@ class CharBiDAF(nn.Module):
         # For RNET attention, this is a substitute for 3.2 Gated self-attention
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
-        mod = self.mod(att, c_len)
+        mod = self.mod(att, c_len) # (batch_size, c_len, 2 * hidden_size)
 
         # RNET adds:
         # Self matching attention
         if self.attention_type == 'rnet':
-            self_match = self.self_match(att, att, c_mask, c_mask)
-            mod = self.mod2(self_match, c_len)
+            self_match = self.self_match(mod, mod, c_mask, c_mask) # (batch_size, c_len, 6 * hidden_size)
+            # [context, c2c_attention, context * c2c_attention]
+            att = self_match
+            mod = self.mod2(self_match, c_len) # (batch_size, c_len, 2 * hidden_size)
 
         # 2 tensors, each (batch_size, c_len)
         if self.output_type == 'bidaf':
