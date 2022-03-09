@@ -167,8 +167,14 @@ class CharBiDAF(nn.Module):
 
         self.output_type = output
         if self.output_type == 'bidaf':
-            self.out = layers.BiDAFOutput(hidden_size=hidden_size,
-                                          drop_prob=drop_prob)
+            if self.attention_type == 'rnet':
+                self.out = layers.BiDAFOutput(hidden_size=hidden_size,
+                                            drop_prob=drop_prob,
+                                            input_size=6 * hidden_size)
+            else:
+                self.out = layers.BiDAFOutput(hidden_size=hidden_size,
+                                            drop_prob=drop_prob,
+                                            input_size=8 * hidden_size)
             print('layers.BiDAFOutput \n')
         elif self.output_type == 'rnet':
             self.out = layers.OutputRNET(hidden_size=hidden_size,
