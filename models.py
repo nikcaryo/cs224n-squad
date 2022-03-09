@@ -156,7 +156,13 @@ class CharBiDAF(nn.Module):
         if self.attention_type == 'rnet':
             self.self_match = layers.SelfMatch2(
                 hidden_size=hidden_size * 8, drop_prob=drop_prob)
+            self.mod2 = layers.RNNEncoder(input_size=8 * hidden_size,
+                                     hidden_size=hidden_size,
+                                     num_layers=1,
+                                     drop_prob=drop_prob,
+                                     lstm=False)
             print('layers.SelfMatch2')
+            print('layers.RNNEncoder')
 
         self.output_type = output
         if self.output_type == 'bidaf':
@@ -190,38 +196,26 @@ class CharBiDAF(nn.Module):
             c_emb = self.emb(cw_idxs)   # (batch_size, c_len, hidden_size)
             q_emb = self.emb(qw_idxs)   # (batch_size, q_len, hidden_size)
 
-
         # Encode both the context and question with RNN
-        # (batch_size, c_len, 2 * hidden_size)
         c_enc = self.enc(c_emb, c_len)
-        # (batch_size, q_len, 2 * hidden_size)
         q_enc = self.enc(q_emb, q_len)
 
-        # Equiv to gated attention
+        # For BiDAF attention, this is all we do.
+        # For RNET attention, this is a substitute for 3.2 Gated self-attention
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
-        # print(att)
+        mod = self.mod(att, c_len)
+
+        # RNET adds:
         # Self matching attention
-        # (batch_size, c_len, 8 * hidden_size)
         if self.attention_type == 'rnet':
             self_match = self.self_match(att, att, c_mask, c_mask)
-            att = self_match
- 
-        mod = self.mod(att, c_len)
-        
-        # self_match = torch.relu(self_match)
-        # print(self_match.size())
-        # print(self_match)
-        # RNN as in RNET, but without the input dependent on output
-        # (batch_size, c_len, 2 * hidden_size)
-        
-        # print(mod.size())
+            mod = self.mod2(self_match, c_len)
 
+        # 2 tensors, each (batch_size, c_len)
         if self.output_type == 'bidaf':
-            # 2 tensors, each (batch_size, c_len)
             out = self.out(att, mod, c_mask)
         elif self.output_type == 'rnet':
             out = self.out(q_enc, mod)
-        # print(out)
 
         return out
