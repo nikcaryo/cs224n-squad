@@ -270,7 +270,9 @@ def main(args):
     scheduler = ASHAScheduler(
         max_t=10,
         grace_period=1,
-        reduction_factor=2)
+        reduction_factor=2,
+        metric="F1",
+        mode="max")
 
     result = tune.run(
         rayrun,
