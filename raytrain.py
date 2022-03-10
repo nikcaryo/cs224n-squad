@@ -14,6 +14,9 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
 import util
+import ray
+from ray import tune
+from ray.tune.schedulers import AsyncHyperBandScheduler
 
 from args import get_train_args
 from collections import OrderedDict
@@ -24,10 +27,18 @@ from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD
 
+USERNAME = 'jpreilly'
 
-def main(args):
+
+def get_absolute(filepath):
+    return '/Users/{}/cs224n-squad'.format(USERNAME) + filepath[1:]
+
+
+def rayrun(config):
     # Set up logging and devices
-    args.save_dir = util.get_save_dir(args.save_dir, args.name, training=True)
+    args = config['args']
+    args.save_dir = util.get_save_dir(get_absolute(
+        args.save_dir), args.name, training=True)
     log = util.get_logger(args.save_dir, args.name)
     tbx = SummaryWriter(args.save_dir)
     device, args.gpu_ids = util.get_available_devices()
@@ -43,30 +54,33 @@ def main(args):
 
     # Get embeddings
     log.info('Loading embeddings...')
-    word_vectors = util.torch_from_json(args.word_emb_file)
-    char_vectors = util.torch_from_json(args.char_emb_file)
+    # word_vectors = util.torch_from_json(args.word_emb_file) /data/word_emb.json
+    word_vectors = util.torch_from_json(get_absolute(args.word_emb_file))
+    # char_vectors = util.torch_from_json(args.char_emb_file)
+    char_vectors = util.torch_from_json(get_absolute(args.char_emb_file))
 
     # Get model
     log.info('Building model...')
     if args.model == 'bidaf':
         model = BiDAF(word_vectors=word_vectors,
                       hidden_size=args.hidden_size,
-                      drop_prob=args.drop_prob)
+                      drop_prob=config['drop_prob'])
     elif args.model == 'charbidaf':
         model = CharBiDAF(word_vectors=word_vectors,
                           char_vectors=char_vectors,
                           char_hidden_size=args.char_hidden_size,
                           use_char=args.use_char,
-                          hidden_size=args.hidden_size,
-                          drop_prob=args.drop_prob,
+                          hidden_size=config['hidden_size'],
+                          drop_prob=config['drop_prob'],
                           attention=args.attention,
                           output=args.output,
                           char_mask=args.char_mask)
 
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
-        log.info(f'Loading checkpoint from {args.load_path}...')
-        model, step = util.load_model(model, args.load_path, args.gpu_ids)
+        log.info(f'Loading checkpoint from {get_absolute(args.load_path)}...')
+        model, step = util.load_model(
+            model, get_absolute(args.load_path), args.gpu_ids)
     else:
         step = 0
     model = model.to(device)
@@ -81,19 +95,20 @@ def main(args):
                                  log=log)
 
     # Get optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
+    optimizer = optim.Adadelta(model.parameters(), config['lr'],
+                               weight_decay=config['weight_decay'])
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
     # Get data loader
     log.info('Building dataset...')
-    train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
+    train_dataset = SQuAD(get_absolute(
+        args.train_record_file), args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
                                    shuffle=True,
                                    num_workers=args.num_workers,
                                    collate_fn=collate_fn)
-    dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)
+    dev_dataset = SQuAD(get_absolute(args.dev_record_file), args.use_squad_v2)
     dev_loader = data.DataLoader(dev_dataset,
                                  batch_size=args.batch_size,
                                  shuffle=False,
@@ -157,10 +172,14 @@ def main(args):
                     log.info(f'Evaluating at step {step}...')
                     ema.assign(model)
                     results, pred_dict = evaluate(model, dev_loader, device,
-                                                  args.dev_eval_file,
+                                                  get_absolute(
+                                                      args.dev_eval_file),
                                                   args.max_ans_len,
                                                   args.use_squad_v2)
                     saver.save(step, model, results[args.metric_name], device)
+
+                    tune.report(LOSS=results['NLL'],
+                                F1=results['F1'], EM=results['EM'])
                     ema.resume(model)
 
                     # Log to console
@@ -174,7 +193,7 @@ def main(args):
                         tbx.add_scalar(f'dev/{k}', v, step)
                     util.visualize(tbx,
                                    pred_dict=pred_dict,
-                                   eval_path=args.dev_eval_file,
+                                   eval_path=get_absolute(args.dev_eval_file),
                                    step=step,
                                    split='dev',
                                    num_visuals=args.num_visuals)
@@ -233,5 +252,35 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
     return results, pred_dict
 
 
+def main(args):
+    config = {
+        "drop_prob": tune.uniform(0, 0.4),
+        "hidden_size": tune.quniform(75, 200, 1),
+        'lr': tune.uniform(1e-3, 1),
+        'weight_decay': tune.uniform(0, 0.2),
+        'args': args
+    }
+    sched = AsyncHyperBandScheduler(max_t=10,
+                                    grace_period=1,
+                                    reduction_factor=2)
+    result = tune.run(
+        rayrun,
+        config=config,
+        metric="F1",
+        mode="max",
+        num_samples=3,
+        scheduler=sched
+    )
+    print(result.results_df)
+
+    best_trial = result.get_best_trial()
+    print("Best trial config: {}".format(best_trial.config))
+    print("Best trial final validation loss: {}".format(
+        best_trial.last_result['LOSS']))
+    print("Best trial final validation accuracy: {}".format(
+        best_trial.last_result['F1']))
+
+
 if __name__ == '__main__':
+    args = get_train_args()
     main(get_train_args())
