@@ -34,7 +34,7 @@ def get_absolute(filepath):
     device, args.gpu_ids = util.get_available_devices()
     print(device)
     if device != 'cpu':
-        return filepath
+        return filepath[1:]
     else:
         return '/Users/{}/cs224n-squad'.format(USERNAME) + filepath[1:]
 
