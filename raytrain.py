@@ -35,7 +35,7 @@ def get_absolute(filepath):
     # print(device)
     # return '~/cs224n-squad' + filepath[1:]
     if device != 'cpu':
-        return '/home/jreillymb/cs224n-squad/' + filepath[1:]
+        return '/home/jreillymb/cs224n-squad' + filepath[1:]
     else:
         return '/Users/{}/cs224n-squad'.format(USERNAME) + filepath[1:]
 
@@ -267,15 +267,20 @@ def main(args):
         'args': args
     }
 
+    scheduler = ASHAScheduler(
+        max_t=10,
+        grace_period=1,
+        reduction_factor=2)
+
     result = tune.run(
         rayrun,
         config=config,
-        num_samples=10,
+        num_samples=3,
         resources_per_trial={
             "cpu": 2,
             "gpu": 1  # set this for GPUs
         },
-        scheduler=ASHAScheduler(metric="F1", mode="max")
+        scheduler=scheduler
     )
     print(result.results_df)
 
