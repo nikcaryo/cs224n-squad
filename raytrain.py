@@ -33,7 +33,7 @@ USERNAME = 'jpreilly'
 def get_absolute(filepath):
     device, args.gpu_ids = util.get_available_devices()
     print(device)
-    if device:
+    if device != 'cpu':
         return filepath
     else:
         return '/Users/{}/cs224n-squad'.format(USERNAME) + filepath[1:]
@@ -270,6 +270,10 @@ def main(args):
         rayrun,
         config=config,
         num_samples=1500,
+        resources_per_trial={
+            "cpu": 2,
+            "gpu": 1  # set this for GPUs
+        },
         scheduler=ASHAScheduler(metric="F1", mode="max")
     )
     print(result.results_df)
