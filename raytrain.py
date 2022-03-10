@@ -269,7 +269,7 @@ def main(args):
     result = tune.run(
         rayrun,
         config=config,
-        num_samples=1500,
+        num_samples=10,
         resources_per_trial={
             "cpu": 2,
             "gpu": 1  # set this for GPUs
