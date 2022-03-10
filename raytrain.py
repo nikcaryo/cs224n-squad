@@ -265,7 +265,6 @@ def main(args):
         rayrun,
         config=config,
         num_samples=1500,
-        checkpoint_dir=None,
         scheduler=ASHAScheduler(metric="F1", mode="max")
     )
     print(result.results_df)
