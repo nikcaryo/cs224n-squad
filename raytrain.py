@@ -32,10 +32,10 @@ USERNAME = 'jpreilly'
 
 def get_absolute(filepath):
     device, args.gpu_ids = util.get_available_devices()
-    print(device)
-    return '~/cs224n-squad' + filepath[1:]
+    # print(device)
+    # return '~/cs224n-squad' + filepath[1:]
     if device != 'cpu':
-        return '/cs224n-squad' + filepath[1:]
+        return '/home/jreillymb/cs224n-squad/' + filepath[1:]
     else:
         return '/Users/{}/cs224n-squad'.format(USERNAME) + filepath[1:]
 
