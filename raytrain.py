@@ -31,7 +31,12 @@ USERNAME = 'jpreilly'
 
 
 def get_absolute(filepath):
-    return '/Users/{}/cs224n-squad'.format(USERNAME) + filepath[1:]
+    device, args.gpu_ids = util.get_available_devices()
+    print(device)
+    if device:
+        return 'cs224n-squad' + filepath[1:]
+    else:
+        return '/Users/{}/cs224n-squad'.format(USERNAME) + filepath[1:]
 
 
 def rayrun(config):
