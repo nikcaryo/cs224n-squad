@@ -264,9 +264,8 @@ def main(args):
     result = tune.run(
         rayrun,
         config=config,
-        metric="F1",
-        mode="max",
         num_samples=1500,
+        checkpoint_dir=None,
         scheduler=ASHAScheduler(metric="F1", mode="max")
     )
     print(result.results_df)
