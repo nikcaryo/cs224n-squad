@@ -16,7 +16,7 @@ import torch.utils.data as data
 import util
 import ray
 from ray import tune
-from ray.tune.schedulers import AsyncHyperBandScheduler
+from ray.tune.schedulers import ASHAScheduler
 
 from args import get_train_args
 from collections import OrderedDict
@@ -260,16 +260,14 @@ def main(args):
         'weight_decay': tune.uniform(0, 0.2),
         'args': args
     }
-    sched = AsyncHyperBandScheduler(max_t=10,
-                                    grace_period=1,
-                                    reduction_factor=2)
+
     result = tune.run(
         rayrun,
         config=config,
         metric="F1",
         mode="max",
-        num_samples=3,
-        scheduler=sched
+        num_samples=1500,
+        scheduler=ASHAScheduler(metric="F1", mode="max")
     )
     print(result.results_df)
 
